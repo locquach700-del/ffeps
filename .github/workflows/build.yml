@@ -1,0 +1,103 @@
+name: Build FF ESP APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      ANDROID_SDK_ROOT: /opt/android-sdk
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. JDK 17 ─────────────────────────────────────────────────────────
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # ── 3. Android SDK — manual, không dùng setup-android action ──────────
+      - name: Install Android cmdline-tools
+        run: |
+          sudo mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+          wget -q \
+            https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip \
+            -O /tmp/cmdtools.zip
+          sudo unzip -q /tmp/cmdtools.zip -d /tmp/cmdtools_extracted
+          sudo mv /tmp/cmdtools_extracted/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
+          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$ANDROID_SDK_ROOT/platform-tools"           >> $GITHUB_PATH
+          echo "$ANDROID_SDK_ROOT/build-tools/34.0.0"       >> $GITHUB_PATH
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT"             >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"         >> $GITHUB_ENV
+
+      - name: Accept licenses
+        run: yes | sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses || true
+
+      - name: Install SDK components
+        run: |
+          sdkmanager --sdk_root=$ANDROID_SDK_ROOT \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0"
+
+      # ── 4. Gradle wrapper jar ──────────────────────────────────────────────
+      - name: Download Gradle wrapper jar
+        run: |
+          mkdir -p gradle/wrapper
+          wget -q \
+            https://repo1.maven.org/maven2/org/gradle/gradle-wrapper/8.4/gradle-wrapper-8.4.jar \
+            -O gradle/wrapper/gradle-wrapper.jar || \
+          wget -q \
+            https://services.gradle.org/distributions/gradle-8.4-wrapper.jar \
+            -O gradle/wrapper/gradle-wrapper.jar || \
+          curl -sL \
+            https://raw.githubusercontent.com/gradle/gradle/v8.4.0/gradle/wrapper/gradle-wrapper.jar \
+            -o gradle/wrapper/gradle-wrapper.jar
+
+      # ── 5. Build ───────────────────────────────────────────────────────────
+      - name: Grant gradlew execute
+        run: chmod +x ./gradlew
+
+      - name: Build APK
+        run: |
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --stacktrace \
+            -Pandroid.sdk.root=$ANDROID_SDK_ROOT
+
+      # ── 6. Upload ──────────────────────────────────────────────────────────
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FF-ESP-OB55
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 30
+
+      # ── 7. GitHub Release (khi push tag v*) ───────────────────────────────
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: app/build/outputs/apk/release/app-release-unsigned.apk
+          name: FF ESP OB55 ${{ github.ref_name }}
+          body: |
+            ## FF ESP Overlay OB55
+            - Box đỏ quanh địch + corner accent
+            - Snapline vàng từ màn hình đến chân
+            - HP bar màu theo % máu
+            - Hiển thị khoảng cách
+            - Nút toggle kéo được
+            ### Cài
+            1. Tải APK
+            2. Bật cài từ nguồn không rõ
+            3. Cài → mở → cấp quyền Overlay
+            4. Nhấn MỞ FREE FIRE + BẬT ESP
