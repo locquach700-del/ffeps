@@ -24,15 +24,15 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # ── 3. Android SDK — manual, không dùng setup-android action ──────────
+      # ── 3. Android SDK manual install ─────────────────────────────────────
       - name: Install Android cmdline-tools
         run: |
           sudo mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
           wget -q \
             https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip \
             -O /tmp/cmdtools.zip
-          sudo unzip -q /tmp/cmdtools.zip -d /tmp/cmdtools_extracted
-          sudo mv /tmp/cmdtools_extracted/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
+          sudo unzip -q /tmp/cmdtools.zip -d /tmp/cmdtools_out
+          sudo mv /tmp/cmdtools_out/cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
           echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
           echo "$ANDROID_SDK_ROOT/platform-tools"           >> $GITHUB_PATH
           echo "$ANDROID_SDK_ROOT/build-tools/34.0.0"       >> $GITHUB_PATH
@@ -52,37 +52,35 @@ jobs:
       # ── 4. Gradle wrapper jar ──────────────────────────────────────────────
       - name: Download Gradle wrapper jar
         run: |
-          mkdir -p gradle/wrapper
           wget -q \
-            https://repo1.maven.org/maven2/org/gradle/gradle-wrapper/8.4/gradle-wrapper-8.4.jar \
-            -O gradle/wrapper/gradle-wrapper.jar || \
+            https://repo1.maven.org/maven2/org/gradle/gradle/8.4/gradle-8.4-wrapper.jar \
+            -O gradle/wrapper/gradle-wrapper.jar 2>/dev/null || \
           wget -q \
             https://services.gradle.org/distributions/gradle-8.4-wrapper.jar \
-            -O gradle/wrapper/gradle-wrapper.jar || \
-          curl -sL \
-            https://raw.githubusercontent.com/gradle/gradle/v8.4.0/gradle/wrapper/gradle-wrapper.jar \
-            -o gradle/wrapper/gradle-wrapper.jar
+            -O gradle/wrapper/gradle-wrapper.jar 2>/dev/null || true
 
-      # ── 5. Build ───────────────────────────────────────────────────────────
-      - name: Grant gradlew execute
-        run: chmod +x ./gradlew
+      # ── 5. gradlew permission — TRƯỚC khi chạy bất kỳ gradle command ──────
+      - name: Fix gradlew permission
+        run: |
+          ls -la gradlew || echo "gradlew not found!"
+          chmod +x gradlew
 
-      - name: Build APK
+      # ── 6. Build APK ───────────────────────────────────────────────────────
+      - name: Build Release APK
         run: |
           ./gradlew assembleRelease \
             --no-daemon \
-            --stacktrace \
-            -Pandroid.sdk.root=$ANDROID_SDK_ROOT
+            --stacktrace
 
-      # ── 6. Upload ──────────────────────────────────────────────────────────
-      - name: Upload APK artifact
+      # ── 7. Upload artifact ─────────────────────────────────────────────────
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: FF-ESP-OB55
           path: app/build/outputs/apk/release/app-release-unsigned.apk
           retention-days: 30
 
-      # ── 7. GitHub Release (khi push tag v*) ───────────────────────────────
+      # ── 8. GitHub Release (khi push tag v*) ───────────────────────────────
       - name: Create Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
