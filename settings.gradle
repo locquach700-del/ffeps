@@ -1,2 +1,5 @@
-rootProject.name = "FFESP"
-include ':app'
+// lang: Gradle / file: settings.gradle / target: Pixel Assist
+pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }
+rootProject.name = "PixelAssist"
+include(":app")

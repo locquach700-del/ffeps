@@ -1,105 +1,18 @@
-# FF ESP OB55
+# Pixel Assist — Android visual QA
 
-ESP Overlay cho Free Fire — box đỏ + snapline vàng, chạy trên Android 12-13.
+Native Kotlin overlay for validating FOV geometry and screen-capture permission flows.
 
----
+## Scope
+This project draws a transparent FOV circle, crosshair, diagonals, tracer, box, and an app-generated TEST marker. MediaProjection creates an ImageReader capture surface but frames are not analyzed or stored. Shizuku is checked for permission status only. No player/enemy recognition, aim-lock, injection, hooks, or automated game input is implemented.
 
-## Setup GitHub Actions (tự build APK)
+## Build
+- Android Gradle Plugin 8.5.2, Gradle 8.7, Kotlin 1.9.24
+- compileSdk 34, minSdk 26, JDK 17
+- Run: `gradle assembleDebug`
+- GitHub Actions builds on every push to main and manual dispatch. Download `pixel-assist-debug-apk` from the workflow run Artifacts.
 
-### Bước 1 — Tạo repo
-1. Vào [github.com](https://github.com) → **New repository**
-2. Đặt tên: `ffesp` → **Create repository**
-
-### Bước 2 — Upload code
-```bash
-git init
-git add .
-git commit -m "init"
-git branch -M main
-git remote add origin https://github.com/TEN_MAY/ffesp.git
-git push -u origin main
-```
-
-### Bước 3 — Xem build chạy
-1. Vào repo → tab **Actions**
-2. Workflow `Build FF ESP APK` tự chạy
-3. Sau khi xanh → vào **Artifacts** → tải `FF-ESP-OB55.apk`
-
-### Bước 4 — Release có link tải
-```bash
-git tag v1.0
-git push origin v1.0
-```
-→ GitHub tự tạo Release page với link tải APK.
-
----
-
-## Cài APK trên điện thoại
-
-1. Tải APK từ Actions artifacts hoặc Release page
-2. Bật **"Cài ứng dụng từ nguồn không rõ"** trong Settings
-3. Cài APK → mở app **FF ESP**
-4. Lần đầu: bấm **MỞ FREE FIRE + BẬT ESP** → cấp quyền Overlay
-5. Quay lại app → bấm **MỞ FREE FIRE + BẬT ESP** lần nữa
-6. FF tự mở, overlay ESP chạy bên trên
-
----
-
-## Dùng ESP
-
-- **Nút ESP ON/OFF**: nổi góc trái, kéo được, tap để toggle
-- **Box đỏ**: viền quanh địch
-- **Tia vàng**: kéo từ bottom màn hình đến chân địch
-- **HP bar**: thanh màu bên trái box
-- **Số khoảng cách**: phía trên box
-
----
-
-## Cấu trúc project
-
-```
-ffesp/
-├── .github/workflows/build.yml   ← CI/CD build APK
-├── app/src/main/
-│   ├── java/com/noob/ffesp/
-│   │   ├── MainActivity.java      ← UI chính
-│   │   ├── ESPOverlayService.java ← Foreground service
-│   │   ├── ESPView.java           ← Canvas renderer (box + line)
-│   │   ├── ESPControlButton.java  ← Nút toggle nổi
-│   │   ├── MockDataFeed.java      ← Data giả (test UI)
-│   │   └── MemReader.java         ← Real mem reader (cần root)
-│   ├── res/layout/activity_main.xml
-│   └── AndroidManifest.xml
-└── README.md
-```
-
----
-
-## Root → đọc memory thật
-
-Thay `MockDataFeed.start(espView)` trong `ESPOverlayService.java` bằng:
-
-```java
-int pid = MemReader.findFFPid();
-if (pid != -1) {
-    long base = MemReader.findModuleBase(pid, "libil2cpp.so");
-    MemReader reader = new MemReader(pid);
-    // feed real enemy positions vào espView.setEnemies()
-}
-```
-
-Offset trong `MemReader.java` cần re-derive sau mỗi patch OB.
-Dùng il2cppdumper + Ghidra để lấy offset mới.
-
----
-
-## Re-derive offset sau patch
-
-```
-1. adb pull /data/app/<ff_package>/lib/arm64/libil2cpp.so
-2. il2cppdumper libil2cpp.so → dump.cs + script.json
-3. Load Ghidra + Il2CppInspector plugin
-4. Search class: EntityManager, PlayerEntity, BoneSystem
-5. Cập nhật OFF_* trong MemReader.java
-6. Push → Actions tự build lại
-```
+## Device setup
+1. Install/start Shizuku if testing its permission-status button.
+2. Install APK and grant overlay permission.
+3. Select a test app, tap Start visual overlay, then approve screen capture.
+4. Stop using the persistent notification.

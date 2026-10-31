@@ -1,37 +1,12 @@
-plugins {
-    id 'com.android.application'
-}
-
+// lang: Gradle / file: app/build.gradle / target: Pixel Assist
+plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
 android {
-    namespace 'com.noob.ffesp'
+    namespace 'com.fov.assist'
     compileSdk 34
-
-    defaultConfig {
-        applicationId "com.noob.ffesp"
-        minSdk 29
-        targetSdk 33
-        versionCode 1
-        versionName "1.0-OB55"
-    }
-
-    buildTypes {
-        release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
-        }
-        debug {
-            applicationIdSuffix ".debug"
-            debuggable true
-        }
-    }
-
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
-    }
+    defaultConfig { applicationId 'com.fov.assist'; minSdk 26; targetSdk 34; versionCode 1; versionName '1.0' }
 }
-
 dependencies {
-    implementation 'androidx.appcompat:appcompat:1.7.0'
-    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.core:core-ktx:1.13.1'
+    implementation 'dev.rikka.shizuku:api:13.1.5'
+    implementation 'dev.rikka.shizuku:provider:13.1.5'
 }
