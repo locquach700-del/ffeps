@@ -71,7 +71,7 @@ class OverlayService : Service() {
             toggle("Tracer",tracer) { tracer=it; refresh() }
             toggle("Synthetic test marker",marker) { marker=it; refresh() }
             slider("FOV 5–35%",5,35,fov) { fov=it; refresh() }
-            slider("Marker Y offset", -20,20,yOffset) { yOffset=it; refresh() }
+            slider("Marker Y offset",-20,20,yOffset) { yOffset=it; refresh() }
             addView(Button(this@OverlayService).apply { text="Hide menu"; setOnClickListener { hideMenu() } })
         }
     }
@@ -85,14 +85,13 @@ class OverlayService : Service() {
     }
 
     private fun LinearLayout.slider(name:String,min:Int,max:Int,initial:Int,update:(Int)->Unit) {
-        addView(TextView(this@OverlayService).apply { text="$name: $initial"; setTextColor(-1) })
+        val label = TextView(this@OverlayService).apply { text="$name: $initial"; setTextColor(-1) }
+        addView(label)
         addView(SeekBar(this@OverlayService).apply {
             this.max=max-min; progress=initial-min
             setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s:SeekBar?,p:Int,fromUser:Boolean) {
-                    val v=p+min; update(v)
-                    val label=(this@sliderParent()).firstOrNull { it is TextView && it.text.toString().startsWith(name) } as? TextView
-                    label?.text="$name: $v"
+                    val v=p+min; label.text="$name: $v"; update(v)
                 }
                 override fun onStartTrackingTouch(s:SeekBar?) {}
                 override fun onStopTrackingTouch(s:SeekBar?) {}
@@ -100,7 +99,6 @@ class OverlayService : Service() {
         })
     }
 
-    private fun SeekBar.sliderParent(): List<android.view.View> = (parent as? LinearLayout)?.let { p -> (0 until p.childCount).map { p.getChildAt(it) } } ?: emptyList()
     private fun refresh() { canvasView?.let(::sync) }
 
     private fun showMenu() {
