@@ -1,0 +1,138 @@
+name: Fix LEEK PROXY APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Install build-tools
+        run: |
+          SDK=$HOME/android-sdk
+          mkdir -p $SDK/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/ct.zip
+          unzip -q /tmp/ct.zip -d /tmp/ct
+          mv /tmp/ct/cmdline-tools $SDK/cmdline-tools/latest
+          export PATH=$SDK/cmdline-tools/latest/bin:$PATH
+          yes | sdkmanager --sdk_root=$SDK --licenses > /dev/null 2>&1 || true
+          sdkmanager --sdk_root=$SDK "build-tools;35.0.0"
+          echo "$SDK/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$SDK/build-tools/35.0.0"       >> $GITHUB_PATH
+
+      - name: Patch libleekguard.so
+        run: |
+          python3 << 'PYEOF'
+          import zipfile, struct, io, os
+
+          apk = 'original.apk'
+
+          with zipfile.ZipFile(apk,'r') as z:
+              so64 = bytearray(z.read('lib/arm64-v8a/libleekguard.so'))
+              so32 = bytearray(z.read('lib/armeabi-v7a/libleekguard.so'))
+
+          MOVZ=struct.pack('<I',0x52800020)
+          RET =struct.pack('<I',0xD65F03C0)
+          NOP =struct.pack('<I',0xD503201F)
+
+          def patch64(so,foff,size):
+              so[foff:foff+4]=MOVZ; so[foff+4:foff+8]=RET
+              for i in range(8,size,4): so[foff+i:foff+i+4]=NOP
+
+          patch64(so64,0xB0D4,2636); patch64(so64,0xAD0C,352)
+          patch64(so64,0xA1FC,288);  patch64(so64,0xE930,72)
+
+          def find32(so):
+              e_shoff=struct.unpack_from('<I',so,0x20)[0]
+              e_sent=struct.unpack_from('<H',so,0x2E)[0]
+              e_snum=struct.unpack_from('<H',so,0x30)[0]
+              e_sstr=struct.unpack_from('<H',so,0x32)[0]
+              shstr=struct.unpack_from('<I',so,e_shoff+e_sstr*e_sent+16)[0]
+              phoff=struct.unpack_from('<I',so,0x1C)[0]
+              phent=struct.unpack_from('<H',so,0x2A)[0]
+              phnum=struct.unpack_from('<H',so,0x2C)[0]
+              ds_off=ds_sz=ds_ent=str_off=0
+              for i in range(e_snum):
+                  sh=e_shoff+i*e_sent
+                  n=so[shstr+struct.unpack_from('<I',so,sh)[0]:].split(b'\x00')[0].decode('utf-8','ignore')
+                  soff=struct.unpack_from('<I',so,sh+16)[0]; ssz=struct.unpack_from('<I',so,sh+20)[0]
+                  sent=struct.unpack_from('<I',so,sh+36)[0]
+                  if n=='.dynsym': ds_off=soff;ds_sz=ssz;ds_ent=sent or 16
+                  elif n=='.dynstr': str_off=soff
+              def v2o(va):
+                  for i in range(phnum):
+                      ph=phoff+i*phent; pt=struct.unpack_from('<I',so,ph)[0]
+                      po=struct.unpack_from('<I',so,ph+4)[0]; pv=struct.unpack_from('<I',so,ph+8)[0]
+                      pf=struct.unpack_from('<I',so,ph+16)[0]
+                      if pt==1 and pv<=va<pv+pf: return po+(va-pv)
+                  return va
+              funcs={}
+              for i in range(ds_sz//ds_ent):
+                  sym=ds_off+i*ds_ent; noff=struct.unpack_from('<I',so,sym)[0]
+                  val=struct.unpack_from('<I',so,sym+4)[0]; sz=struct.unpack_from('<I',so,sym+8)[0]
+                  nm=so[str_off+noff:str_off+noff+128].split(b'\x00')[0].decode('utf-8','ignore')
+                  if nm.startswith('Java_'):
+                      funcs[nm]=(v2o(val&~1),sz,val&1)
+              return funcs
+
+          funcs32=find32(so32)
+          MR0=struct.pack('<H',0x2001); BXR=struct.pack('<H',0x4770); NP=struct.pack('<H',0xBF00)
+          MOV_ARM=struct.pack('<I',0xE3A00001); BX_ARM=struct.pack('<I',0xE12FFF1E)
+          for nm,(foff,sz,thumb) in funcs32.items():
+              if any(k in nm for k in ['validate','allowed','check','feature']):
+                  if thumb:
+                      so32[foff:foff+2]=MR0; so32[foff+2:foff+4]=BXR
+                      for i in range(4,sz,2): so32[foff+i:foff+i+2]=NP
+                  else:
+                      so32[foff:foff+4]=MOV_ARM; so32[foff+4:foff+8]=BX_ARM
+                      for i in range(8,sz,4): so32[foff+i:foff+i+4]=struct.pack('<I',0xE320F000)
+
+          buf=io.BytesIO()
+          with zipfile.ZipFile(apk,'r') as src:
+              with zipfile.ZipFile(buf,'w',allowZip64=True) as dst:
+                  seen=set()
+                  for info in src.infolist():
+                      nm=info.filename
+                      if nm.startswith('META-INF/') or nm in seen: continue
+                      seen.add(nm)
+                      ni=zipfile.ZipInfo(nm,info.date_time)
+                      ni.compress_type=info.compress_type; ni.external_attr=info.external_attr
+                      if nm=='lib/arm64-v8a/libleekguard.so': dst.writestr(ni,bytes(so64))
+                      elif nm=='lib/armeabi-v7a/libleekguard.so': dst.writestr(ni,bytes(so32))
+                      else: dst.writestr(ni,src.read(nm))
+
+          with open('patched_raw.apk','wb') as f: f.write(buf.getvalue())
+          print("Patched OK")
+          PYEOF
+
+      - name: Zipalign
+        run: zipalign -f -v -p 4 patched_raw.apk patched_aligned.apk
+
+      - name: Generate keystore
+        run: |
+          keytool -genkey -v -keystore sign.keystore -alias app \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass app1234 -keypass app1234 \
+            -dname "CN=App,OU=Unknown,O=Unknown,L=Unknown,ST=Unknown,C=US"
+
+      - name: Sign APK v1+v2+v3
+        run: |
+          apksigner sign \
+            --ks sign.keystore --ks-pass pass:app1234 \
+            --key-pass pass:app1234 --ks-key-alias app \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out LEEK_PROXY_FIXED.apk patched_aligned.apk
+          apksigner verify --verbose LEEK_PROXY_FIXED.apk | head -5
+          ls -lh LEEK_PROXY_FIXED.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LEEK-PROXY-FIXED
+          path: LEEK_PROXY_FIXED.apk
+          retention-days: 7
